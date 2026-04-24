@@ -1,25 +1,52 @@
 import streamlit as st
 from gtts import gTTS
-import requests
-import os
-import tempfile
-import subprocess
+import requests, os, tempfile, subprocess
 from PIL import Image
 import imageio_ffmpeg as ffmpeg
+from transformers import pipeline
 
-st.set_page_config(page_title="Auto Video Generator", layout="centered")
+st.set_page_config(page_title="Cinematic Video Generator")
 
-st.title("🎬 Auto Video Generator (Stable Version)")
-st.write("Paste text → auto voice + image → MP4 video")
+st.title("🎬 Cinematic AI Video Generator")
 
-# ----------------------------
-# Input
-# ----------------------------
-text = st.text_area("✍️ Enter your content", height=200)
+text = st.text_area("Enter topic / text", height=200)
 
-# ----------------------------
-# Helpers
-# ----------------------------
+# -----------------------
+# AI Script Generator
+# -----------------------
+generator = pipeline("text2text-generation", model="google/flan-t5-base")
+
+def expand_text(text):
+    prompt = f"""
+    Create a detailed cinematic documentary-style script (5-8 minutes).
+    Use emotional storytelling, explanations, and smooth narration.
+
+    {text}
+    """
+    return generator(prompt, max_length=1200)[0]['generated_text']
+
+# -----------------------
+# Scene Split
+# -----------------------
+def split_scenes(text):
+    sentences = text.split(".")
+    scenes, chunk = [], ""
+
+    for s in sentences:
+        if len(chunk) < 200:
+            chunk += s + ". "
+        else:
+            scenes.append(chunk.strip())
+            chunk = s + ". "
+
+    if chunk:
+        scenes.append(chunk.strip())
+
+    return scenes
+
+# -----------------------
+# Image Generator
+# -----------------------
 def generate_image(prompt, path):
     try:
         url = "https://image.pollinations.ai/prompt/" + prompt
@@ -27,96 +54,74 @@ def generate_image(prompt, path):
         with open(path, "wb") as f:
             f.write(img)
     except:
-        Image.new("RGB", (1280, 720), color=(0, 0, 0)).save(path)
+        Image.new("RGB", (1280,720)).save(path)
 
+# -----------------------
+# Voice
+# -----------------------
 def text_to_audio(text, path):
-    tts = gTTS(text=text, lang="en")
-    tts.save(path)
+    gTTS(text=text, lang="en").save(path)
 
-def split_scenes(text):
-    sentences = text.split(".")
-    return [s.strip() for s in sentences if len(s.strip()) > 5]
+# -----------------------
+# Video Creator
+# -----------------------
+def create_video(script):
+    scenes = split_scenes(script)
+    temp = tempfile.mkdtemp()
+    ff = ffmpeg.get_ffmpeg_exe()
 
-# ----------------------------
-# Core: FFmpeg video creation
-# ----------------------------
-def create_video(text):
-    scenes = split_scenes(text)
-    temp_dir = tempfile.mkdtemp()
-    video_list_file = os.path.join(temp_dir, "list.txt")
-    ffmpeg_path = ffmpeg.get_ffmpeg_exe()
-
-    segment_paths = []
+    segments = []
 
     for i, scene in enumerate(scenes):
-        audio_path = os.path.join(temp_dir, f"audio_{i}.mp3")
-        image_path = os.path.join(temp_dir, f"img_{i}.jpg")
-        segment_path = os.path.join(temp_dir, f"seg_{i}.mp4")
+        img = f"{temp}/img{i}.jpg"
+        aud = f"{temp}/aud{i}.mp3"
+        vid = f"{temp}/seg{i}.mp4"
 
-        # Generate assets
-        text_to_audio(scene, audio_path)
-        generate_image(scene[:60], image_path)
+        generate_image(scene[:50], img)
+        text_to_audio(scene, aud)
 
-        # Create video segment from image + audio
         cmd = [
-            ffmpeg_path,
-            "-y",
-            "-loop", "1",
-            "-i", image_path,
-            "-i", audio_path,
-            "-c:v", "libx264",
-            "-tune", "stillimage",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-pix_fmt", "yuv420p",
-            "-shortest",
-            segment_path
+            ff,"-y",
+            "-loop","1","-i",img,
+            "-i",aud,
+            "-vf",f"drawtext=text='{scene[:60]}':x=10:y=h-40:fontsize=24:fontcolor=white",
+            "-c:v","libx264","-tune","stillimage",
+            "-c:a","aac","-shortest",
+            vid
         ]
         subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        segments.append(vid)
 
-        segment_paths.append(segment_path)
+    # concat
+    listfile = f"{temp}/list.txt"
+    with open(listfile,"w") as f:
+        for s in segments:
+            f.write(f"file '{s}'\n")
 
-    # Create concat list
-    with open(video_list_file, "w") as f:
-        for p in segment_paths:
-            f.write(f"file '{p}'\n")
+    out = f"{temp}/final.mp4"
 
-    output_path = os.path.join(temp_dir, "output.mp4")
+    subprocess.run([
+        ff,"-y","-f","concat","-safe","0",
+        "-i",listfile,"-c","copy",out
+    ])
 
-    # Concatenate segments
-    cmd_concat = [
-        ffmpeg_path,
-        "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", video_list_file,
-        "-c", "copy",
-        output_path
-    ]
-    subprocess.run(cmd_concat, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return out
 
-    return output_path
-
-# ----------------------------
+# -----------------------
 # UI
-# ----------------------------
-if st.button("🚀 Generate Video"):
-    if not text.strip():
-        st.warning("Please enter some text.")
+# -----------------------
+if st.button("🎥 Generate Cinematic Video"):
+    if not text:
+        st.warning("Enter text")
     else:
-        with st.spinner("Generating video..."):
-            try:
-                video_file = create_video(text)
-                st.success("✅ Video created!")
-                st.video(video_file)
+        with st.spinner("Generating cinematic script..."):
+            script = expand_text(text)
 
-                with open(video_file, "rb") as f:
-                    st.download_button(
-                        "⬇ Download Video",
-                        data=f,
-                        file_name="video.mp4",
-                        mime="video/mp4"
-                    )
-            except Exception as e:
-                st.error("Something went wrong.")
-                st.code(str(e))
+        with st.spinner("Rendering video..."):
+            video = create_video(script)
+
+        st.success("Done!")
+        st.video(video)
+
+        with open(video,"rb") as f:
+            st.download_button("Download", f, "cinematic.mp4")

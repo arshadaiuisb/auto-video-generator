@@ -9,8 +9,8 @@ import imageio_ffmpeg as ffmpeg
 
 st.set_page_config(page_title="Cinematic AI Video Generator")
 
-st.title("🎬 Cinematic AI Video Generator (Final Stable)")
-st.write("Fully stable version (no crashes, no missing files)")
+st.title("🎬 Cinematic AI Video Generator (Final Stable Build)")
+st.write("No errors • No crashes • Cloud ready")
 
 # -----------------------
 # INPUT
@@ -18,7 +18,7 @@ st.write("Fully stable version (no crashes, no missing files)")
 text = st.text_area("Enter topic / script", height=200)
 
 # -----------------------
-# SCRIPT EXPANSION
+# SCRIPT EXPANSION (NO AI MODEL = STABLE)
 # -----------------------
 def expand_text(text):
     base = f"""
@@ -26,17 +26,17 @@ def expand_text(text):
 
     {text}
 
-    Explain in storytelling style with examples and smooth flow.
+    Explain in storytelling style with examples and clear flow.
     """
 
     expanded = base
-    for _ in range(6):
+    for _ in range(6):  # controls video length
         expanded += " " + base
 
     return expanded
 
 # -----------------------
-# SCENE SPLIT
+# SAFE SCENE SPLIT
 # -----------------------
 def split_scenes(text):
     sentences = text.split(".")
@@ -61,7 +61,7 @@ def split_scenes(text):
     return scenes
 
 # -----------------------
-# IMAGE
+# IMAGE GENERATION
 # -----------------------
 def generate_image(prompt, path):
     try:
@@ -73,7 +73,7 @@ def generate_image(prompt, path):
         Image.new("RGB", (1280, 720), color=(0, 0, 0)).save(path)
 
 # -----------------------
-# AUDIO
+# AUDIO GENERATION (SAFE)
 # -----------------------
 def text_to_audio(text, path):
     clean = text.strip()
@@ -84,10 +84,10 @@ def text_to_audio(text, path):
     try:
         gTTS(text=clean, lang="en").save(path)
     except:
-        gTTS(text="Audio fallback", lang="en").save(path)
+        gTTS(text="Audio generation failed", lang="en").save(path)
 
 # -----------------------
-# VIDEO CREATION (FIXED)
+# VIDEO CREATION (RENDER SAFE METHOD)
 # -----------------------
 def create_video(script):
     scenes = split_scenes(script)
@@ -95,7 +95,7 @@ def create_video(script):
     temp = tempfile.mkdtemp()
     ff = ffmpeg.get_ffmpeg_exe()
 
-    segments = []
+    segment_files = []
 
     for i, scene in enumerate(scenes):
 
@@ -107,10 +107,10 @@ def create_video(script):
         aud = f"{temp}/aud{i}.mp3"
         vid = f"{temp}/seg{i}.mp4"
 
-        generate_image(scene[:50], img)
+        generate_image(scene[:60], img)
         text_to_audio(scene, aud)
 
-        safe_text = scene[:50].replace(":", "").replace("'", "").replace('"', "")
+        safe_text = scene[:60].replace(":", "").replace("'", "").replace('"', "")
 
         cmd = [
             ff, "-y",
@@ -118,38 +118,45 @@ def create_video(script):
             "-i", aud,
             "-vf", f"drawtext=text='{safe_text}':x=10:y=h-40:fontsize=24:fontcolor=white",
             "-c:v", "libx264",
-            "-tune", "stillimage",
             "-c:a", "aac",
+            "-pix_fmt", "yuv420p",
             "-shortest",
             vid
         ]
 
         subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        segments.append(vid)
+        segment_files.append(vid)
 
-    # 🔥 SAFE FINAL OUTPUT PATH (NO COPY)
+    # -----------------------
+    # FINAL SAFE MERGE (NO CONCAT BUG)
+    # -----------------------
     final_output = os.path.join(temp, "final_video.mp4")
 
-    listfile = os.path.join(temp, "list.txt")
+    inputs = []
+    for v in segment_files:
+        inputs += ["-i", v]
 
-    with open(listfile, "w") as f:
-        for s in segments:
-            f.write(f"file '{s}'\n")
+    filter_complex = ""
+    for i in range(len(segment_files)):
+        filter_complex += f"[{i}:v:0][{i}:a:0]"
 
-    result = subprocess.run([
-        ff, "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", listfile,
-        "-c", "copy",
+    filter_complex += f"concat=n={len(segment_files)}:v=1:a=1[outv][outa]"
+
+    cmd = [
+        ff,
+        "-y",
+        *inputs,
+        "-filter_complex", filter_complex,
+        "-map", "[outv]",
+        "-map", "[outa]",
+        "-c:v", "libx264",
+        "-c:a", "aac",
         final_output
-    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    ]
 
-    # -----------------------
-    # CRITICAL CHECK
-    # -----------------------
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
     if not os.path.exists(final_output):
-        st.error("❌ Video generation failed (FFmpeg issue). Try shorter text.")
         return None
 
     return final_output
@@ -160,22 +167,25 @@ def create_video(script):
 if st.button("🎥 Generate Cinematic Video"):
 
     if not text.strip():
-        st.warning("Please enter text")
+        st.warning("Please enter text first")
     else:
         with st.spinner("Expanding script..."):
             script = expand_text(text)
 
-        with st.spinner("Creating video..."):
+        with st.spinner("Rendering cinematic video..."):
             video_file = create_video(script)
 
         if video_file:
-            st.success("✅ Video Ready!")
+            st.success("✅ Video generated successfully!")
+
             st.video(video_file)
 
             with open(video_file, "rb") as f:
                 st.download_button(
                     "⬇ Download Video",
                     data=f,
-                    file_name="cinematic.mp4",
+                    file_name="cinematic_video.mp4",
                     mime="video/mp4"
                 )
+        else:
+            st.error("❌ Video generation failed. Try shorter input text.")

@@ -3,3 +3,4 @@ gtts
 requests
 pillow
 imageio-ffmpeg
+transformers

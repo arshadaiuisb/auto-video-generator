@@ -4,13 +4,14 @@ import requests
 import os
 import tempfile
 import subprocess
+import shutil
 from PIL import Image
 import imageio_ffmpeg as ffmpeg
 
 st.set_page_config(page_title="Cinematic AI Video Generator")
 
-st.title("🎬 Cinematic AI Video Generator (Stable Version)")
-st.write("Generate long cinematic videos safely (no crashes)")
+st.title("🎬 Cinematic AI Video Generator (Stable Final Version)")
+st.write("Generate long cinematic videos without errors")
 
 # -----------------------
 # INPUT
@@ -18,7 +19,7 @@ st.write("Generate long cinematic videos safely (no crashes)")
 text = st.text_area("Enter topic / script", height=200)
 
 # -----------------------
-# SCRIPT EXPANSION (NO AI MODEL = STABLE)
+# SCRIPT EXPANSION (NO AI MODEL)
 # -----------------------
 def expand_text(text):
     base = f"""
@@ -26,17 +27,17 @@ def expand_text(text):
 
     {text}
 
-    Explain this in detail with storytelling, examples, and smooth flow.
+    Explain this in a detailed storytelling style with examples.
     """
 
     expanded = base
-    for _ in range(6):  # controls video length
+    for _ in range(6):
         expanded += " " + base
 
     return expanded
 
 # -----------------------
-# SAFE SCENE SPLITTING
+# SAFE SCENE SPLIT
 # -----------------------
 def split_scenes(text):
     sentences = text.split(".")
@@ -73,7 +74,7 @@ def generate_image(prompt, path):
         Image.new("RGB", (1280, 720), color=(0, 0, 0)).save(path)
 
 # -----------------------
-# TEXT TO SPEECH (SAFE FIX)
+# AUDIO GENERATION (SAFE)
 # -----------------------
 def text_to_audio(text, path):
     clean = text.strip()
@@ -84,7 +85,7 @@ def text_to_audio(text, path):
     try:
         gTTS(text=clean, lang="en").save(path)
     except:
-        gTTS(text="Audio generation failed, continuing video.", lang="en").save(path)
+        gTTS(text="Audio generation failed.", lang="en").save(path)
 
 # -----------------------
 # VIDEO CREATOR (FFMPEG)
@@ -107,7 +108,6 @@ def create_video(script):
         aud = f"{temp}/aud{i}.mp3"
         vid = f"{temp}/seg{i}.mp4"
 
-        # assets
         generate_image(scene[:50], img)
         text_to_audio(scene, aud)
 
@@ -135,7 +135,7 @@ def create_video(script):
         for s in segments:
             f.write(f"file '{s}'\n")
 
-    output = f"{temp}/final.mp4"
+    raw_output = f"{temp}/final.mp4"
 
     subprocess.run([
         ff, "-y",
@@ -143,10 +143,14 @@ def create_video(script):
         "-safe", "0",
         "-i", listfile,
         "-c", "copy",
-        output
+        raw_output
     ])
 
-    return output
+    # 🔥 CRITICAL FIX: COPY TO STABLE FILE
+    final_output = "final_video.mp4"
+    shutil.copy(raw_output, final_output)
+
+    return final_output
 
 # -----------------------
 # UI
@@ -154,18 +158,20 @@ def create_video(script):
 if st.button("🎥 Generate Cinematic Video"):
 
     if not text.strip():
-        st.warning("Please enter some text first.")
+        st.warning("Please enter text")
     else:
-        with st.spinner("Expanding cinematic script..."):
+        with st.spinner("Expanding script..."):
             script = expand_text(text)
 
-        with st.spinner("Rendering video (this may take time)..."):
-            video = create_video(script)
+        with st.spinner("Rendering cinematic video..."):
+            video_file = create_video(script)
 
-        st.success("✅ Video generated successfully!")
-        st.video(video)
+        st.success("✅ Video ready!")
 
-        with open(video, "rb") as f:
+        # 🔥 FIXED: always stable file
+        st.video(video_file)
+
+        with open(video_file, "rb") as f:
             st.download_button(
                 "⬇ Download Video",
                 data=f,

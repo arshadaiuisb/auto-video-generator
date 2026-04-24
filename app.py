@@ -4,14 +4,13 @@ import requests
 import os
 import tempfile
 import subprocess
-import shutil
 from PIL import Image
 import imageio_ffmpeg as ffmpeg
 
 st.set_page_config(page_title="Cinematic AI Video Generator")
 
-st.title("🎬 Cinematic AI Video Generator (Stable Final Version)")
-st.write("Generate long cinematic videos without errors")
+st.title("🎬 Cinematic AI Video Generator (Final Stable)")
+st.write("Fully stable version (no crashes, no missing files)")
 
 # -----------------------
 # INPUT
@@ -19,7 +18,7 @@ st.write("Generate long cinematic videos without errors")
 text = st.text_area("Enter topic / script", height=200)
 
 # -----------------------
-# SCRIPT EXPANSION (NO AI MODEL)
+# SCRIPT EXPANSION
 # -----------------------
 def expand_text(text):
     base = f"""
@@ -27,7 +26,7 @@ def expand_text(text):
 
     {text}
 
-    Explain this in a detailed storytelling style with examples.
+    Explain in storytelling style with examples and smooth flow.
     """
 
     expanded = base
@@ -37,7 +36,7 @@ def expand_text(text):
     return expanded
 
 # -----------------------
-# SAFE SCENE SPLIT
+# SCENE SPLIT
 # -----------------------
 def split_scenes(text):
     sentences = text.split(".")
@@ -62,7 +61,7 @@ def split_scenes(text):
     return scenes
 
 # -----------------------
-# IMAGE GENERATION
+# IMAGE
 # -----------------------
 def generate_image(prompt, path):
     try:
@@ -74,21 +73,21 @@ def generate_image(prompt, path):
         Image.new("RGB", (1280, 720), color=(0, 0, 0)).save(path)
 
 # -----------------------
-# AUDIO GENERATION (SAFE)
+# AUDIO
 # -----------------------
 def text_to_audio(text, path):
     clean = text.strip()
 
     if not clean or len(clean) < 5:
-        clean = "This is a cinematic scene."
+        clean = "Cinematic scene"
 
     try:
         gTTS(text=clean, lang="en").save(path)
     except:
-        gTTS(text="Audio generation failed.", lang="en").save(path)
+        gTTS(text="Audio fallback", lang="en").save(path)
 
 # -----------------------
-# VIDEO CREATOR (FFMPEG)
+# VIDEO CREATION (FIXED)
 # -----------------------
 def create_video(script):
     scenes = split_scenes(script)
@@ -128,27 +127,30 @@ def create_video(script):
         subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         segments.append(vid)
 
-    # concat list
-    listfile = f"{temp}/list.txt"
+    # 🔥 SAFE FINAL OUTPUT PATH (NO COPY)
+    final_output = os.path.join(temp, "final_video.mp4")
+
+    listfile = os.path.join(temp, "list.txt")
 
     with open(listfile, "w") as f:
         for s in segments:
             f.write(f"file '{s}'\n")
 
-    raw_output = f"{temp}/final.mp4"
-
-    subprocess.run([
+    result = subprocess.run([
         ff, "-y",
         "-f", "concat",
         "-safe", "0",
         "-i", listfile,
         "-c", "copy",
-        raw_output
-    ])
+        final_output
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    # 🔥 CRITICAL FIX: COPY TO STABLE FILE
-    final_output = "final_video.mp4"
-    shutil.copy(raw_output, final_output)
+    # -----------------------
+    # CRITICAL CHECK
+    # -----------------------
+    if not os.path.exists(final_output):
+        st.error("❌ Video generation failed (FFmpeg issue). Try shorter text.")
+        return None
 
     return final_output
 
@@ -163,18 +165,17 @@ if st.button("🎥 Generate Cinematic Video"):
         with st.spinner("Expanding script..."):
             script = expand_text(text)
 
-        with st.spinner("Rendering cinematic video..."):
+        with st.spinner("Creating video..."):
             video_file = create_video(script)
 
-        st.success("✅ Video ready!")
+        if video_file:
+            st.success("✅ Video Ready!")
+            st.video(video_file)
 
-        # 🔥 FIXED: always stable file
-        st.video(video_file)
-
-        with open(video_file, "rb") as f:
-            st.download_button(
-                "⬇ Download Video",
-                data=f,
-                file_name="cinematic_video.mp4",
-                mime="video/mp4"
-            )
+            with open(video_file, "rb") as f:
+                st.download_button(
+                    "⬇ Download Video",
+                    data=f,
+                    file_name="cinematic.mp4",
+                    mime="video/mp4"
+                )

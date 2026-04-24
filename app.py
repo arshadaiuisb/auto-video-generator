@@ -1,58 +1,67 @@
 import streamlit as st
 from gtts import gTTS
-import requests, os, tempfile, subprocess
+import requests
+import os
+import tempfile
+import subprocess
 from PIL import Image
 import imageio_ffmpeg as ffmpeg
 
-st.set_page_config(page_title="Cinematic Video Generator")
+st.set_page_config(page_title="Cinematic AI Video Generator")
 
-st.title("🎬 Cinematic AI Video Generator (Stable)")
-st.write("Generate 5+ minute cinematic videos automatically")
+st.title("🎬 Cinematic AI Video Generator (Stable Version)")
+st.write("Generate long cinematic videos safely (no crashes)")
 
 # -----------------------
 # INPUT
 # -----------------------
-text = st.text_area("Enter topic / text", height=200)
+text = st.text_area("Enter topic / script", height=200)
 
 # -----------------------
-# SAFE SCRIPT EXPANSION (NO AI MODEL)
+# SCRIPT EXPANSION (NO AI MODEL = STABLE)
 # -----------------------
 def expand_text(text):
     base = f"""
-    This is a cinematic educational narration:
+    This is a cinematic documentary narration:
 
     {text}
 
-    Explain this in a detailed, engaging, storytelling style with examples.
+    Explain this in detail with storytelling, examples, and smooth flow.
     """
 
     expanded = base
-    for _ in range(8):  # increase length (controls video duration)
+    for _ in range(6):  # controls video length
         expanded += " " + base
 
     return expanded
 
 # -----------------------
-# SCENE SPLIT
+# SAFE SCENE SPLITTING
 # -----------------------
 def split_scenes(text):
     sentences = text.split(".")
-    scenes, chunk = [], ""
+    scenes = []
+    chunk = ""
 
     for s in sentences:
-        if len(chunk) < 200:
+        s = s.strip()
+        if not s:
+            continue
+
+        if len(chunk) < 180:
             chunk += s + ". "
         else:
-            scenes.append(chunk.strip())
+            if len(chunk.strip()) > 10:
+                scenes.append(chunk.strip())
             chunk = s + ". "
 
-    if chunk:
+    if len(chunk.strip()) > 10:
         scenes.append(chunk.strip())
 
     return scenes
 
 # -----------------------
-# IMAGE GENERATOR
+# IMAGE GENERATION
 # -----------------------
 def generate_image(prompt, path):
     try:
@@ -61,33 +70,47 @@ def generate_image(prompt, path):
         with open(path, "wb") as f:
             f.write(img)
     except:
-        Image.new("RGB", (1280, 720), color=(0,0,0)).save(path)
+        Image.new("RGB", (1280, 720), color=(0, 0, 0)).save(path)
 
 # -----------------------
-# VOICE
+# TEXT TO SPEECH (SAFE FIX)
 # -----------------------
 def text_to_audio(text, path):
-    gTTS(text=text, lang="en").save(path)
+    clean = text.strip()
+
+    if not clean or len(clean) < 5:
+        clean = "This is a cinematic scene."
+
+    try:
+        gTTS(text=clean, lang="en").save(path)
+    except:
+        gTTS(text="Audio generation failed, continuing video.", lang="en").save(path)
 
 # -----------------------
-# VIDEO CREATOR (FFmpeg)
+# VIDEO CREATOR (FFMPEG)
 # -----------------------
 def create_video(script):
     scenes = split_scenes(script)
+
     temp = tempfile.mkdtemp()
     ff = ffmpeg.get_ffmpeg_exe()
 
     segments = []
 
     for i, scene in enumerate(scenes):
+
+        scene = scene.strip()
+        if not scene:
+            continue
+
         img = f"{temp}/img{i}.jpg"
         aud = f"{temp}/aud{i}.mp3"
         vid = f"{temp}/seg{i}.mp4"
 
+        # assets
         generate_image(scene[:50], img)
         text_to_audio(scene, aud)
 
-        # SAFE subtitle text (avoid crash)
         safe_text = scene[:50].replace(":", "").replace("'", "").replace('"', "")
 
         cmd = [
@@ -95,7 +118,8 @@ def create_video(script):
             "-loop", "1", "-i", img,
             "-i", aud,
             "-vf", f"drawtext=text='{safe_text}':x=10:y=h-40:fontsize=24:fontcolor=white",
-            "-c:v", "libx264", "-tune", "stillimage",
+            "-c:v", "libx264",
+            "-tune", "stillimage",
             "-c:a", "aac",
             "-shortest",
             vid
@@ -104,8 +128,9 @@ def create_video(script):
         subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         segments.append(vid)
 
-    # CONCAT ALL SEGMENTS
+    # concat list
     listfile = f"{temp}/list.txt"
+
     with open(listfile, "w") as f:
         for s in segments:
             f.write(f"file '{s}'\n")
@@ -124,19 +149,20 @@ def create_video(script):
     return output
 
 # -----------------------
-# UI BUTTON
+# UI
 # -----------------------
 if st.button("🎥 Generate Cinematic Video"):
+
     if not text.strip():
-        st.warning("Please enter some text")
+        st.warning("Please enter some text first.")
     else:
-        with st.spinner("Expanding script..."):
+        with st.spinner("Expanding cinematic script..."):
             script = expand_text(text)
 
-        with st.spinner("Creating video (this may take time)..."):
+        with st.spinner("Rendering video (this may take time)..."):
             video = create_video(script)
 
-        st.success("✅ Video Ready!")
+        st.success("✅ Video generated successfully!")
         st.video(video)
 
         with open(video, "rb") as f:
